@@ -63,7 +63,7 @@ export async function getProvision(
       FROM legal_provisions lp
       JOIN legal_documents ld ON ld.id = lp.document_id
       WHERE lp.document_id = ?
-      ORDER BY lp.order_index
+      ORDER BY lp.id
     `).all(resolvedDocumentId) as ProvisionRow[];
 
     return {

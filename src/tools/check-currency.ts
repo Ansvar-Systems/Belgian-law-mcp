@@ -27,7 +27,7 @@ interface DocumentRow {
   id: string;
   title: string;
   status: string;
-  document_type: string;
+  type: string;
   issued_date: string | null;
   in_force_date: string | null;
 }
@@ -41,7 +41,7 @@ export async function checkCurrency(
   }
 
   const doc = db.prepare(`
-    SELECT id, title, status, document_type, issued_date, in_force_date
+    SELECT id, title, status, type, issued_date, in_force_date
     FROM legal_documents
     WHERE id = ? OR title LIKE ?
     LIMIT 1
@@ -78,7 +78,7 @@ export async function checkCurrency(
       document_id: doc.id,
       title: doc.title,
       status: doc.status,
-      type: doc.document_type,
+      type: doc.type,
       issued_date: doc.issued_date,
       in_force_date: doc.in_force_date,
       is_current: isCurrent,
