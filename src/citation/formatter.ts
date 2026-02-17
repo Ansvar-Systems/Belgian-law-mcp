@@ -1,10 +1,5 @@
 /**
- * UK legal citation formatter.
- *
- * Formats:
- *   full:     "Section 3, Data Protection Act 2018"
- *   short:    "s. 3 DPA 2018"
- *   pinpoint: "s. 3(1)(a)"
+ * Belgian legal citation formatter.
  */
 
 import type { ParsedCitation, CitationFormat } from '../types/index.js';
@@ -21,16 +16,25 @@ export function formatCitation(
 
   switch (format) {
     case 'full':
-      return `Section ${pinpoint}, ${parsed.title ?? ''} ${parsed.year ?? ''}`.trim();
+      if (parsed.title?.trim()) {
+        return `${parsed.title.trim()}, art. ${pinpoint}`;
+      }
+      return `art. ${pinpoint}`;
 
     case 'short':
-      return `s. ${pinpoint} ${parsed.title ?? ''} ${parsed.year ?? ''}`.trim();
+      if (parsed.title?.trim()) {
+        return `art. ${pinpoint} ${parsed.title.trim()}`;
+      }
+      return `art. ${pinpoint}`;
 
     case 'pinpoint':
-      return `s. ${pinpoint}`;
+      return `art. ${pinpoint}`;
 
     default:
-      return `Section ${pinpoint}, ${parsed.title ?? ''} ${parsed.year ?? ''}`.trim();
+      if (parsed.title?.trim()) {
+        return `${parsed.title.trim()}, art. ${pinpoint}`;
+      }
+      return `art. ${pinpoint}`;
   }
 }
 

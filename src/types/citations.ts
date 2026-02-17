@@ -16,6 +16,7 @@ export interface ValidationResult {
   document_exists: boolean;
   provision_exists: boolean;
   document_title?: string;
+  document_url?: string;
   status?: string;
   warnings: string[];
 }

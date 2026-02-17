@@ -1,4 +1,9 @@
 import type Database from '@ansvar/mcp-sqlite';
+import {
+  PACKAGE_NAME,
+  REPOSITORY_URL,
+  SERVER_LABEL,
+} from '../constants.js';
 
 export interface AboutContext {
   version: string;
@@ -49,11 +54,11 @@ export function getAbout(
 ): AboutResult {
   return {
     server: {
-      name: 'Belgian Law MCP',
-      package: '@ansvar/belgian-law-mcp',
+      name: SERVER_LABEL,
+      package: PACKAGE_NAME,
       version: context.version,
       suite: 'Ansvar Compliance Suite',
-      repository: 'https://github.com/Ansvar-Systems/Belgium-law-mcp',
+      repository: REPOSITORY_URL,
     },
     dataset: {
       fingerprint: context.fingerprint,

@@ -1,67 +1,104 @@
 /**
- * UK legal citation parser.
+ * Belgian legal citation parser.
  *
- * Parses citations like:
- *   "Section 3, Data Protection Act 2018"
- *   "s. 3 DPA 2018"
- *   "s. 3(1)(a) Data Protection Act 2018"
+ * Supported examples:
+ *   "Loi du 2 fevrier 1994, art. 1"
+ *   "Wet van 2 februari 1994, art. 1"
+ *   "loi-1994-02-02-1994009284-fr, art. 1"
+ *   "art. 1, loi-1994-02-02-1994009284-fr"
  */
 
 import type { ParsedCitation } from '../types/index.js';
 
-// Full citation: "Section 3, Data Protection Act 2018"
-const FULL_CITATION = /^(?:Section|s\.?)\s+(\d+(?:\(\d+\))*(?:\([a-z]\))*)\s*,?\s+(.+?)\s+(\d{4})$/i;
+const ARTICLE_NUMBER = '(\\d+(?:\\s*[a-z]+)?(?:er)?)';
+const STATUTE_ID = '((?:loi|wet)-\\d{4}-\\d{2}-\\d{2}-\\d{10}-(?:fr|nl))';
 
-// Short citation: "s. 3 DPA 2018"
-const SHORT_CITATION = /^s\.?\s+(\d+(?:\(\d+\))*(?:\([a-z]\))*)\s+([A-Z][A-Z0-9&\s]*?)\s+(\d{4})$/;
+const ID_FIRST_PATTERN = new RegExp(`^${STATUTE_ID}\\s*,?\\s*(?:art\\.?|article)\\s*${ARTICLE_NUMBER}$`, 'i');
+const ARTICLE_FIRST_ID_PATTERN = new RegExp(`^(?:art\\.?|article)\\s*${ARTICLE_NUMBER}\\s*,?\\s*${STATUTE_ID}$`, 'i');
 
-// Section with subsection: "s. 3(1)(a)"
-const SECTION_REF = /^(\d+)(?:\((\d+)\))?(?:\(([a-z])\))?$/;
+const TITLE_FIRST_PATTERN = new RegExp(`^(.+?)\\s*,\\s*(?:art\\.?|article)\\s*${ARTICLE_NUMBER}$`, 'i');
+const ARTICLE_FIRST_TITLE_PATTERN = new RegExp(`^(?:art\\.?|article)\\s*${ARTICLE_NUMBER}\\s*,\\s*(.+?)$`, 'i');
+
+const YEAR_PATTERN = /(19|20)\d{2}/;
 
 export function parseCitation(citation: string): ParsedCitation {
   const trimmed = citation.trim();
-
-  let match = trimmed.match(FULL_CITATION);
-  if (match) {
-    return parseSection(match[1], match[2], parseInt(match[3], 10), 'statute');
+  if (!trimmed) {
+    return {
+      valid: false,
+      type: 'unknown',
+      error: 'Empty citation',
+    };
   }
 
-  match = trimmed.match(SHORT_CITATION);
+  let match = trimmed.match(ID_FIRST_PATTERN);
   if (match) {
-    return parseSection(match[1], match[2], parseInt(match[3], 10), 'statute');
+    const documentId = match[1];
+    const section = normalizeArticleNumber(match[2]);
+    return {
+      valid: true,
+      type: 'statute',
+      title: documentId,
+      year: extractYear(documentId),
+      section,
+    };
+  }
+
+  match = trimmed.match(ARTICLE_FIRST_ID_PATTERN);
+  if (match) {
+    const section = normalizeArticleNumber(match[1]);
+    const documentId = match[2];
+    return {
+      valid: true,
+      type: 'statute',
+      title: documentId,
+      year: extractYear(documentId),
+      section,
+    };
+  }
+
+  match = trimmed.match(TITLE_FIRST_PATTERN);
+  if (match) {
+    const title = match[1].trim();
+    const section = normalizeArticleNumber(match[2]);
+    return {
+      valid: true,
+      type: 'statute',
+      title,
+      year: extractYear(title),
+      section,
+    };
+  }
+
+  match = trimmed.match(ARTICLE_FIRST_TITLE_PATTERN);
+  if (match) {
+    const section = normalizeArticleNumber(match[1]);
+    const title = match[2].trim();
+    return {
+      valid: true,
+      type: 'statute',
+      title,
+      year: extractYear(title),
+      section,
+    };
   }
 
   return {
     valid: false,
     type: 'unknown',
-    error: `Could not parse UK citation: "${trimmed}"`,
+    error: `Could not parse Belgian citation: "${trimmed}"`,
   };
 }
 
-function parseSection(
-  sectionStr: string,
-  title: string,
-  year: number,
-  type: 'statute' | 'statutory_instrument'
-): ParsedCitation {
-  const sectionMatch = sectionStr.match(SECTION_REF);
-  if (!sectionMatch) {
-    return {
-      valid: true,
-      type,
-      title: title.trim(),
-      year,
-      section: sectionStr,
-    };
+function extractYear(value: string): number | undefined {
+  const match = value.match(YEAR_PATTERN);
+  if (!match) {
+    return undefined;
   }
+  return Number(match[0]);
+}
 
-  return {
-    valid: true,
-    type,
-    title: title.trim(),
-    year,
-    section: sectionMatch[1],
-    subsection: sectionMatch[2] || undefined,
-    paragraph: sectionMatch[3] || undefined,
-  };
+function normalizeArticleNumber(value: string): string {
+  const compact = value.replace(/\s+/g, '').toLowerCase();
+  return compact.replace(/^(\d+)er$/, '$1');
 }

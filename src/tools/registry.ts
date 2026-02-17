@@ -63,7 +63,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'validate_citation',
-    description: 'Validate a UK legal citation against the database. Zero-hallucination check.',
+    description: 'Validate a Belgian legal citation against the database. Zero-hallucination check.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -87,7 +87,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'format_citation',
-    description: 'Format a UK legal citation per standard conventions (full, short, or pinpoint).',
+    description: 'Format a Belgian legal citation per standard conventions (full, short, or pinpoint).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -137,7 +137,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'search_eu_implementations',
-    description: 'Search for EU directives/regulations with UK implementation information.',
+    description: 'Search for EU directives/regulations with Belgian implementation information.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -145,7 +145,7 @@ export const TOOLS: Tool[] = [
         type: { type: 'string', enum: ['directive', 'regulation'], description: 'Filter by type' },
         year_from: { type: 'number', description: 'Filter by year (from)' },
         year_to: { type: 'number', description: 'Filter by year (to)' },
-        has_belgian_implementation: { type: 'boolean', description: 'Filter by UK implementation' },
+        has_belgian_implementation: { type: 'boolean', description: 'Filter by Belgian implementation' },
         limit: { type: 'number', description: 'Max results (default: 20, max: 100)' },
       },
     },

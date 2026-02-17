@@ -42,6 +42,6 @@ export function generateResponseMetadata(
     disclaimer:
       'This data is derived from Justel open data. ' +
       'Verify against official publications when legal certainty is required.',
-    source_authority: 'The National Archives (Justel)',
+    source_authority: 'Belgian Federal Public Service Justice (Justel)',
   };
 }

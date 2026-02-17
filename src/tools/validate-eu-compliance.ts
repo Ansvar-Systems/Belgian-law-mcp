@@ -18,6 +18,12 @@ export interface EUComplianceResult {
   compliance_status: 'compliant' | 'partial' | 'unclear' | 'not_applicable';
   eu_references_found: number;
   warnings: string[];
+  outdated_references?: Array<{
+    eu_document_id: string;
+    title?: string;
+    issue: string;
+    replaced_by?: string;
+  }>;
   recommendations?: string[];
 }
 
@@ -35,7 +41,15 @@ export async function validateEUCompliance(
   }
 
   let sql = `
-    SELECT ed.id, ed.type, ed.title, er.reference_type, er.is_primary_implementation
+    SELECT
+      ed.id,
+      ed.type,
+      ed.title,
+      ed.in_force,
+      ed.amended_by,
+      er.reference_type,
+      er.is_primary_implementation,
+      er.implementation_status
     FROM eu_documents ed
     JOIN eu_references er ON ed.id = er.eu_document_id
     WHERE er.document_id = ?
@@ -48,14 +62,66 @@ export async function validateEUCompliance(
   }
 
   interface Row {
-    id: string; type: string; title: string | null;
-    reference_type: string; is_primary_implementation: number;
+    id: string;
+    type: string;
+    title: string | null;
+    in_force: number;
+    amended_by: string | null;
+    reference_type: string;
+    is_primary_implementation: number;
+    implementation_status: string | null;
   }
 
   const rows = db.prepare(sql).all(...params) as Row[];
 
   const warnings: string[] = [];
+  const outdatedReferences: Array<{
+    eu_document_id: string;
+    title?: string;
+    issue: string;
+    replaced_by?: string;
+  }> = [];
   const recommendations: string[] = [];
+
+  for (const row of rows) {
+    if (row.in_force === 0) {
+      const issue = `References repealed EU ${row.type} ${row.id}`;
+      warnings.push(issue);
+
+      const outdated: {
+        eu_document_id: string;
+        title?: string;
+        issue: string;
+        replaced_by?: string;
+      } = {
+        eu_document_id: row.id,
+        issue,
+      };
+      if (row.title) outdated.title = row.title;
+
+      if (row.amended_by) {
+        try {
+          const replacements = JSON.parse(row.amended_by) as string[];
+          if (Array.isArray(replacements) && replacements.length > 0) {
+            outdated.replaced_by = replacements[0];
+          }
+        } catch {
+          // Ignore malformed replacement metadata.
+        }
+      }
+
+      outdatedReferences.push(outdated);
+    }
+
+    if (row.is_primary_implementation === 1 && !row.implementation_status) {
+      warnings.push(`Primary implementation of ${row.id} lacks implementation_status`);
+      recommendations.push(`Add implementation_status metadata for ${row.id}`);
+    }
+
+    if (row.implementation_status === 'unknown' || row.implementation_status === 'pending') {
+      warnings.push(`Implementation status for ${row.id} is "${row.implementation_status}"`);
+    }
+  }
 
   if (rows.length === 0) {
     recommendations.push(
@@ -65,7 +131,9 @@ export async function validateEUCompliance(
 
   const status: EUComplianceResult['compliance_status'] =
     rows.length === 0 ? 'not_applicable' :
-    warnings.length > 0 ? 'unclear' : 'compliant';
+    outdatedReferences.length > 0 ? 'partial' :
+    warnings.length > 0 ? 'unclear' :
+    'compliant';
 
   return {
     results: {
@@ -74,6 +142,7 @@ export async function validateEUCompliance(
       compliance_status: status,
       eu_references_found: rows.length,
       warnings,
+      outdated_references: outdatedReferences.length > 0 ? outdatedReferences : undefined,
       recommendations: recommendations.length > 0 ? recommendations : undefined,
     },
     _metadata: generateResponseMetadata(db),

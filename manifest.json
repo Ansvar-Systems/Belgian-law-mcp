@@ -1,0 +1,56 @@
+{
+  "manifest_version": "0.3",
+  "name": "belgian-law-mcp",
+  "display_name": "Belgian Law MCP Server",
+  "version": "1.0.0",
+  "description": "Belgian legal research MCP server with statute search, citation validation, and EU cross-reference tools",
+  "author": {
+    "name": "Ansvar Systems",
+    "email": "hello@ansvar.ai",
+    "url": "https://ansvar.eu"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ansvar-Systems/Belgium-law-mcp"
+  },
+  "keywords": [
+    "mcp",
+    "belgium",
+    "belgian-law",
+    "legal",
+    "justel",
+    "eu-law"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/dist/index.js"
+      ],
+      "env": {}
+    }
+  },
+  "tools": [
+    { "name": "search_legislation" },
+    { "name": "get_provision" },
+    { "name": "validate_citation" },
+    { "name": "build_legal_stance" },
+    { "name": "format_citation" },
+    { "name": "check_currency" },
+    { "name": "get_eu_basis" },
+    { "name": "get_belgian_implementations" },
+    { "name": "search_eu_implementations" },
+    { "name": "get_provision_eu_basis" },
+    { "name": "validate_eu_compliance" },
+    { "name": "about" }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

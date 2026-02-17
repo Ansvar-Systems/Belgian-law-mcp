@@ -1,5 +1,5 @@
 /**
- * validate_citation — Validate a UK legal citation against the database.
+ * validate_citation — Validate a Belgian legal citation against the database.
  */
 
 import type { Database } from '@ansvar/mcp-sqlite';
@@ -15,6 +15,7 @@ export interface ValidateCitationInput {
 export interface ValidateCitationResult {
   citation: string;
   formatted_citation: string;
+  citation_urls: string[];
   valid: boolean;
   document_exists: boolean;
   provision_exists: boolean;
@@ -32,6 +33,7 @@ export async function validateCitationTool(
       results: {
         citation: input.citation,
         formatted_citation: '',
+        citation_urls: [],
         valid: false,
         document_exists: false,
         provision_exists: false,
@@ -43,11 +45,13 @@ export async function validateCitationTool(
 
   const result: ValidationResult = doValidate(db, input.citation);
   const formatted = formatCitation(result.citation);
+  const citationUrls = result.document_url ? [result.document_url] : [];
 
   return {
     results: {
       citation: input.citation,
       formatted_citation: formatted,
+      citation_urls: citationUrls,
       valid: result.citation.valid && result.document_exists && result.provision_exists,
       document_exists: result.document_exists,
       provision_exists: result.provision_exists,

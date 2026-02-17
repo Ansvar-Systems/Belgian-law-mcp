@@ -1,6 +1,33 @@
 {
+  "$schema": "./golden-hashes.schema.json",
   "version": "1.0",
   "mcp_name": "Belgian Law MCP",
-  "note": "Populate after first successful database build",
-  "hashes": {}
+  "jurisdiction": "BE",
+  "description": "Drift detection anchors for stable Belgian provisions.",
+  "provisions": [
+    {
+      "id": "be-hash-001",
+      "description": "Loi du 2 fevrier 1994 (protection de la jeunesse)",
+      "upstream_url": "https://www.ejustice.just.fgov.be/eli/loi/1994/02/02/1994009284/justel",
+      "selector_hint": "Article 1",
+      "expected_sha256": "COMPUTE_ON_FIRST_RUN",
+      "expected_snippet": "protection de la jeunesse"
+    },
+    {
+      "id": "be-hash-002",
+      "description": "Loi du 10 fevrier 1994 (mediation penale)",
+      "upstream_url": "https://www.ejustice.just.fgov.be/eli/loi/1994/02/10/1994009323/justel",
+      "selector_hint": "Article 1",
+      "expected_sha256": "COMPUTE_ON_FIRST_RUN",
+      "expected_snippet": "mediation"
+    },
+    {
+      "id": "be-hash-003",
+      "description": "Loi du 8 decembre 1992 (vie privee)",
+      "upstream_url": "https://www.ejustice.just.fgov.be/eli/loi/1992/12/08/1992009783/justel",
+      "selector_hint": "Article 1",
+      "expected_sha256": "COMPUTE_ON_FIRST_RUN",
+      "expected_snippet": "vie privee"
+    }
+  ]
 }

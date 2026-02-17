@@ -3,7 +3,7 @@
 /**
  * Belgian Law MCP Server — stdio entry point.
  *
- * Provides UK legislation search via Model Context Protocol.
+ * Provides Belgian legislation search via Model Context Protocol.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -16,12 +16,13 @@ import { readFileSync } from 'fs';
 
 import { registerTools, type AboutContext } from './tools/registry.js';
 import { detectCapabilities, readDbMetadata } from './capabilities.js';
+import {
+  DB_ENV_VAR,
+  SERVER_NAME,
+  SERVER_VERSION,
+} from './constants.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const SERVER_NAME = 'belgian-legal-citations';
-const SERVER_VERSION = '1.0.0';
-const DB_ENV_VAR = 'BELGIAN_LAW_DB_PATH';
 
 function resolveDbPath(): string {
   if (process.env[DB_ENV_VAR]) {

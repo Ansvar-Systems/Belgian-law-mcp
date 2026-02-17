@@ -3,25 +3,119 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import Database from '@ansvar/mcp-sqlite';
 import { join } from 'path';
-import { existsSync, copyFileSync, rmSync } from 'fs';
+import { copyFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
 
 import { registerTools } from '../src/tools/registry.js';
+import {
+  DB_ENV_VAR,
+  SERVER_NAME,
+  SERVER_VERSION,
+} from '../src/constants.js';
+import type { AboutContext } from '../src/tools/registry.js';
 
-const SOURCE_DB = process.env.BELGIAN_LAW_DB_PATH
+const SOURCE_DB = process.env[DB_ENV_VAR]
   || join(process.cwd(), 'data', 'database.db');
 const TMP_DB = '/tmp/database.db';
 const TMP_DB_LOCK = '/tmp/database.db.lock';
+const TMP_DB_SHM = '/tmp/database.db-shm';
+const TMP_DB_WAL = '/tmp/database.db-wal';
+const TMP_DB_META = '/tmp/database.db.meta.json';
 
 let db: InstanceType<typeof Database> | null = null;
 
+interface TmpDbMeta {
+  source_db: string;
+  source_signature: string;
+}
+
+function computeSourceSignature(): string {
+  const stats = statSync(SOURCE_DB);
+  return `${stats.size}:${Math.trunc(stats.mtimeMs)}`;
+}
+
+function readTmpMeta(): TmpDbMeta | null {
+  if (!existsSync(TMP_DB_META)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(TMP_DB_META, 'utf-8')) as Partial<TmpDbMeta>;
+    if (parsed.source_db && parsed.source_signature) {
+      return {
+        source_db: parsed.source_db,
+        source_signature: parsed.source_signature,
+      };
+    }
+  } catch {
+    // Ignore corrupted metadata and refresh temp DB.
+  }
+
+  return null;
+}
+
+function clearTmpDbArtifacts() {
+  rmSync(TMP_DB_LOCK, { recursive: true, force: true });
+  rmSync(TMP_DB_SHM, { force: true });
+  rmSync(TMP_DB_WAL, { force: true });
+  rmSync(TMP_DB, { force: true });
+  rmSync(TMP_DB_META, { force: true });
+}
+
+function ensureTempDbIsFresh() {
+  const sourceSignature = computeSourceSignature();
+  const meta = readTmpMeta();
+  const shouldRefresh =
+    !existsSync(TMP_DB)
+    || !meta
+    || meta.source_db !== SOURCE_DB
+    || meta.source_signature !== sourceSignature;
+
+  if (shouldRefresh) {
+    clearTmpDbArtifacts();
+    copyFileSync(SOURCE_DB, TMP_DB);
+    writeFileSync(
+      TMP_DB_META,
+      JSON.stringify({ source_db: SOURCE_DB, source_signature: sourceSignature }),
+      'utf-8',
+    );
+    return;
+  }
+
+  // Existing DB is current, but stale lock files can still break sqlite access.
+  rmSync(TMP_DB_LOCK, { recursive: true, force: true });
+}
+
+function computeAboutContext(): AboutContext {
+  let fingerprint = 'unknown';
+  let dbBuilt = 'unknown';
+
+  try {
+    const buf = readFileSync(SOURCE_DB);
+    fingerprint = createHash('sha256').update(buf).digest('hex').slice(0, 12);
+  } catch {
+    // Ignore when DB is unavailable.
+  }
+
+  try {
+    const database = getDatabase();
+    const row = database.prepare("SELECT value FROM db_metadata WHERE key = 'built_at'")
+      .get() as { value: string } | undefined;
+    if (row?.value) dbBuilt = row.value;
+  } catch {
+    // Ignore metadata read failures.
+  }
+
+  return {
+    version: SERVER_VERSION,
+    fingerprint,
+    dbBuilt,
+  };
+}
+
 function getDatabase(): InstanceType<typeof Database> {
   if (!db) {
-    if (existsSync(TMP_DB_LOCK)) {
-      rmSync(TMP_DB_LOCK, { recursive: true, force: true });
-    }
-    if (!existsSync(TMP_DB)) {
-      copyFileSync(SOURCE_DB, TMP_DB);
-    }
+    ensureTempDbIsFresh();
     db = new Database(TMP_DB, { readonly: true });
     db.pragma('foreign_keys = ON');
   }
@@ -41,8 +135,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'GET') {
     res.status(200).json({
-      name: 'belgian-legal-citations',
-      version: '1.0.0',
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
       protocol: 'mcp-streamable-http',
     });
     return;
@@ -56,12 +150,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const database = getDatabase();
 
-    const server = new Server(
-      { name: 'belgian-legal-citations', version: '1.0.0' },
-      { capabilities: { tools: {} } }
-    );
+    const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION }, { capabilities: { tools: {} } });
 
-    registerTools(server, database);
+    registerTools(server, database, computeAboutContext());
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

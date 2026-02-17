@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-const SERVER_NAME = 'belgian-legal-citations';
-const SERVER_VERSION = '1.0.0';
-const REPO_URL = 'https://github.com/Ansvar-Systems/Belgium-law-mcp';
+import {
+  REPOSITORY_URL,
+  SERVER_NAME,
+  SERVER_VERSION,
+} from '../src/constants.js';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   const url = new URL(req.url ?? '/', `https://${req.headers.host}`);
@@ -16,8 +17,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       capabilities: ['statutes', 'eu_cross_references'],
       tier: 'free',
       source_schema_version: '1.0',
-      repo_url: REPO_URL,
-      report_issue_url: `${REPO_URL}/issues/new?template=data-error.md`,
+      repo_url: REPOSITORY_URL,
+      report_issue_url: `${REPOSITORY_URL}/issues/new?template=data-error.md`,
     });
     return;
   }
