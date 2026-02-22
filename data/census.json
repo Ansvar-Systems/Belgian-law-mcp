@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "jurisdiction": "BE",
+  "jurisdiction_name": "Belgium",
+  "portal": "https://www.ejustice.just.fgov.be/",
+  "census_date": "2026-02-22",
+  "agent": "claude-opus-4-6",
+  "summary": {
+    "total_laws": 5775,
+    "ingestable": 5775,
+    "ocr_needed": 0,
+    "inaccessible": 0,
+    "excluded": 0,
+    "total_provisions": 142743
+  },
+  "notes": [
+    "Census derived from current database statistics (5,775 legal documents, 142,743 provisions).",
+    "Source: Justel / Belgisch Staatsblad / Moniteur belge — Belgian official consolidated legislation.",
+    "Bilingual corpus: French (FR) and Dutch (NL) provisions.",
+    "Coverage: Belgian federal cybersecurity and data protection legislation scope.",
+    "Per-law provision counts available at runtime via the 'about' tool.",
+    "Full per-law census entries will be populated on next database rebuild with census extraction enabled."
+  ],
+  "laws": []
+}

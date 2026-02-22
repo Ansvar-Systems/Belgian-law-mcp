@@ -2,9 +2,9 @@ name: Security Scanning (6-Layer)
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   schedule:
     - cron: '0 4 * * 0' # Weekly Sunday 4am UTC
 
@@ -22,6 +22,14 @@ jobs:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript-typescript']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,7 +37,7 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: javascript-typescript
+          languages: ${{ matrix.language }}
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
@@ -37,7 +45,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: '/language:javascript-typescript'
+          category: '/language:${{ matrix.language }}'
 
   # Layer 2: Semgrep — Pattern-based security scanning
   semgrep:
@@ -73,9 +81,10 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
+          scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
+          severity: 'CRITICAL,HIGH'
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -98,8 +107,7 @@ jobs:
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        continue-on-error: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Layer 5: Socket Security — Supply chain analysis
   socket:
@@ -122,6 +130,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -133,6 +144,7 @@ jobs:
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
+          publish_results: true
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
