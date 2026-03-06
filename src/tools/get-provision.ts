@@ -13,6 +13,7 @@ export interface GetProvisionInput {
   chapter?: string;
   section?: string;
   provision_ref?: string;
+  article?: string;
   as_of_date?: string;
 }
 
@@ -53,7 +54,7 @@ export async function getProvision(
   const resolvedDocumentId = resolveExistingStatuteId(db, input.document_id) ?? input.document_id;
   const asOfDate = normalizeAsOfDate(input.as_of_date);
 
-  const provisionRef = input.provision_ref ?? input.section;
+  const provisionRef = input.provision_ref ?? input.section ?? input.article;
 
   // If no specific provision, return all provisions for the document
   if (!provisionRef) {
