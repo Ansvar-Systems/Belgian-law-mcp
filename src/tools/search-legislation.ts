@@ -3,8 +3,9 @@
  */
 
 import type { Database } from '@ansvar/mcp-sqlite';
-import { buildFtsQueryVariants } from '../utils/fts-query.js';
+import { buildFtsQueryVariants, buildLikePattern, sanitizeFtsInput } from '../utils/fts-query.js';
 import { normalizeAsOfDate } from '../utils/as-of-date.js';
+import { resolveExistingStatuteId } from '../utils/statute-id.js';
 import { generateResponseMetadata, type ToolResponse } from '../utils/metadata.js';
 
 export interface SearchLegislationInput {
@@ -43,10 +44,93 @@ export async function searchLegislation(
   }
 
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const queryVariants = buildFtsQueryVariants(input.query);
+  const fetchLimit = limit * 2;
+  const queryVariants = buildFtsQueryVariants(sanitizeFtsInput(input.query));
   const asOfDate = normalizeAsOfDate(input.as_of_date);
 
-  const runCurrentQuery = (ftsQuery: string): SearchLegislationResult[] => {
+  // Resolve document_id from title if provided
+  let resolvedDocId: string | undefined;
+  if (input.document_id) {
+    const resolved = resolveExistingStatuteId(db, input.document_id);
+    resolvedDocId = resolved ?? undefined;
+    if (!resolved) {
+      return {
+        results: [],
+        _metadata: {
+          ...generateResponseMetadata(db),
+          note: `No document found matching "${input.document_id}"`,
+        },
+      };
+    }
+  }
+
+  // Historical query path — try provision versions when as_of_date is provided
+  if (asOfDate) {
+    for (const ftsQuery of queryVariants) {
+      let sql = `
+        WITH ranked_versions AS (
+          SELECT
+            lpv.document_id,
+            ld.title as document_title,
+            lpv.provision_ref,
+            lpv.chapter,
+            lpv.section,
+            lpv.title,
+            substr(lpv.content, 1, 320) as snippet,
+            0.0 as relevance,
+            lpv.valid_from,
+            lpv.valid_to,
+            row_number() OVER (
+              PARTITION BY lpv.document_id, lpv.provision_ref
+              ORDER BY COALESCE(lpv.valid_from, '0000-01-01') DESC, lpv.id DESC
+            ) as version_rank
+          FROM provision_versions_fts
+          JOIN legal_provision_versions lpv ON lpv.id = provision_versions_fts.rowid
+          JOIN legal_documents ld ON ld.id = lpv.document_id
+          WHERE provision_versions_fts MATCH ?
+            AND (lpv.valid_from IS NULL OR lpv.valid_from <= ?)
+            AND (lpv.valid_to IS NULL OR lpv.valid_to > ?)
+      `;
+      const params: (string | number)[] = [ftsQuery, asOfDate, asOfDate];
+
+      if (resolvedDocId) {
+        sql += ` AND lpv.document_id = ?`;
+        params.push(resolvedDocId);
+      }
+
+      if (input.status) {
+        sql += ` AND ld.status = ?`;
+        params.push(input.status);
+      }
+
+      sql += `
+        )
+        SELECT document_id, document_title, provision_ref, chapter, section,
+               title, snippet, relevance, valid_from, valid_to
+        FROM ranked_versions
+        WHERE version_rank = 1
+        ORDER BY relevance
+        LIMIT ?
+      `;
+      params.push(fetchLimit);
+
+      try {
+        const rows = db.prepare(sql).all(...params) as SearchLegislationResult[];
+        if (rows.length > 0) {
+          return {
+            results: deduplicateResults(rows, limit),
+            _metadata: generateResponseMetadata(db),
+          };
+        }
+      } catch {
+        continue;
+      }
+    }
+    // Fall through to current-law search if historical table is empty
+  }
+
+  let queryStrategy = 'none';
+  for (const ftsQuery of queryVariants) {
     let sql = `
       SELECT
         lp.document_id,
@@ -67,9 +151,9 @@ export async function searchLegislation(
 
     const params: (string | number)[] = [ftsQuery];
 
-    if (input.document_id) {
+    if (resolvedDocId) {
       sql += ` AND lp.document_id = ?`;
-      params.push(input.document_id);
+      params.push(resolvedDocId);
     }
 
     if (input.status) {
@@ -78,96 +162,96 @@ export async function searchLegislation(
     }
 
     sql += ` ORDER BY relevance LIMIT ?`;
-    params.push(limit);
+    params.push(fetchLimit);
 
-    return db.prepare(sql).all(...params) as SearchLegislationResult[];
-  };
-
-  const runHistoricalQuery = (ftsQuery: string): SearchLegislationResult[] => {
-    if (!asOfDate) {
-      return [];
+    try {
+      const rows = db.prepare(sql).all(...params) as SearchLegislationResult[];
+      if (rows.length > 0) {
+        queryStrategy = ftsQuery === queryVariants[0] ? 'exact' : 'fallback';
+        const deduped = deduplicateResults(rows, limit);
+        return {
+          results: deduped,
+          _metadata: {
+            ...generateResponseMetadata(db),
+            ...(queryStrategy === 'fallback' ? { query_strategy: 'broadened' as const } : {}),
+          },
+        };
+      }
+    } catch {
+      continue;
     }
+  }
 
-    let sql = `
-      WITH ranked_versions AS (
-        SELECT
-          lpv.document_id,
-          ld.title as document_title,
-          lpv.provision_ref,
-          lpv.chapter,
-          lpv.section,
-          lpv.title,
-          substr(lpv.content, 1, 320) as snippet,
-          0.0 as relevance,
-          lpv.valid_from,
-          lpv.valid_to,
-          row_number() OVER (
-            PARTITION BY lpv.document_id, lpv.provision_ref
-            ORDER BY COALESCE(lpv.valid_from, '0000-01-01') DESC, lpv.id DESC
-          ) as version_rank
-        FROM provision_versions_fts
-        JOIN legal_provision_versions lpv ON lpv.id = provision_versions_fts.rowid
-        JOIN legal_documents ld ON ld.id = lpv.document_id
-        WHERE provision_versions_fts MATCH ?
-          AND (lpv.valid_from IS NULL OR lpv.valid_from <= ?)
-          AND (lpv.valid_to IS NULL OR lpv.valid_to > ?)
+  // LIKE fallback — final tier when FTS5 returns no results
+  {
+    const likePattern = buildLikePattern(sanitizeFtsInput(input.query));
+    let likeSql = `
+      SELECT
+        lp.document_id,
+        ld.title as document_title,
+        lp.provision_ref,
+        lp.chapter,
+        lp.section,
+        lp.title,
+        substr(lp.content, 1, 200) as snippet,
+        0 as relevance,
+        NULL as valid_from,
+        NULL as valid_to
+      FROM legal_provisions lp
+      JOIN legal_documents ld ON ld.id = lp.document_id
+      WHERE lp.content LIKE ?
     `;
-    const params: (string | number)[] = [ftsQuery, asOfDate, asOfDate];
+    const likeParams: (string | number)[] = [likePattern];
 
-    if (input.document_id) {
-      sql += ` AND lpv.document_id = ?`;
-      params.push(input.document_id);
+    if (resolvedDocId) {
+      likeSql += ` AND lp.document_id = ?`;
+      likeParams.push(resolvedDocId);
     }
 
     if (input.status) {
-      sql += ` AND ld.status = ?`;
-      params.push(input.status);
+      likeSql += ` AND ld.status = ?`;
+      likeParams.push(input.status);
     }
 
-    sql += `
-      )
-      SELECT
-        document_id,
-        document_title,
-        provision_ref,
-        chapter,
-        section,
-        title,
-        snippet,
-        relevance,
-        valid_from,
-        valid_to
-      FROM ranked_versions
-      WHERE version_rank = 1
-      ORDER BY relevance
-      LIMIT ?
-    `;
-    params.push(limit);
+    likeSql += ` LIMIT ?`;
+    likeParams.push(fetchLimit);
 
-    return db.prepare(sql).all(...params) as SearchLegislationResult[];
-  };
-
-  const queryWithFallback = (ftsQuery: string): SearchLegislationResult[] => {
-    if (!asOfDate) {
-      return runCurrentQuery(ftsQuery);
+    try {
+      const rows = db.prepare(likeSql).all(...likeParams) as SearchLegislationResult[];
+      if (rows.length > 0) {
+        return {
+          results: deduplicateResults(rows, limit),
+          _metadata: {
+            ...generateResponseMetadata(db),
+            query_strategy: 'like_fallback',
+          },
+        };
+      }
+    } catch {
+      // LIKE query failed
     }
+  }
 
-    const historical = runHistoricalQuery(ftsQuery);
-    if (historical.length > 0) {
-      return historical;
-    }
+  return { results: [], _metadata: generateResponseMetadata(db) };
+}
 
-    // Fallback when historical table is not populated.
-    return runCurrentQuery(ftsQuery);
-  };
-
-  const primaryResults = queryWithFallback(queryVariants.primary);
-  const results = (primaryResults.length > 0 || !queryVariants.fallback)
-    ? primaryResults
-    : queryWithFallback(queryVariants.fallback);
-
-  return {
-    results,
-    _metadata: generateResponseMetadata(db)
-  };
+/**
+ * Deduplicate search results by document_title + provision_ref.
+ * Duplicate document IDs (numeric vs slug) cause the same provision to appear twice.
+ * Keeps the first (highest-ranked) occurrence.
+ */
+function deduplicateResults(
+  rows: SearchLegislationResult[],
+  limit: number,
+): SearchLegislationResult[] {
+  const seen = new Set<string>();
+  const deduped: SearchLegislationResult[] = [];
+  for (const row of rows) {
+    const key = `${row.document_title}::${row.provision_ref}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+    if (deduped.length >= limit) break;
+  }
+  return deduped;
 }
