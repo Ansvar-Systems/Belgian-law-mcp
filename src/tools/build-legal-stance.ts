@@ -3,8 +3,9 @@
  */
 
 import type { Database } from '@ansvar/mcp-sqlite';
-import { buildFtsQueryVariants } from '../utils/fts-query.js';
+import { buildFtsQueryVariants, buildLikePattern, sanitizeFtsInput } from '../utils/fts-query.js';
 import { normalizeAsOfDate } from '../utils/as-of-date.js';
+import { resolveExistingStatuteId } from '../utils/statute-id.js';
 import { generateResponseMetadata, type ToolResponse } from '../utils/metadata.js';
 
 export interface BuildLegalStanceInput {
@@ -47,10 +48,28 @@ export async function buildLegalStance(
   }
 
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const queryVariants = buildFtsQueryVariants(input.query);
+  const fetchLimit = limit * 2;
+  const queryVariants = buildFtsQueryVariants(sanitizeFtsInput(input.query));
   const asOfDate = normalizeAsOfDate(input.as_of_date);
 
-  const runCurrentProvisionQuery = (ftsQuery: string): ProvisionHit[] => {
+  // Resolve document_id from title if provided
+  let resolvedDocId: string | undefined;
+  if (input.document_id) {
+    const resolved = resolveExistingStatuteId(db, input.document_id);
+    resolvedDocId = resolved ?? undefined;
+    if (!resolved) {
+      return {
+        results: { query: input.query, provisions: [], total_citations: 0 },
+        _metadata: {
+          ...generateResponseMetadata(db),
+          note: `No document found matching "${input.document_id}"`,
+        },
+      };
+    }
+  }
+
+  let queryStrategy = 'none';
+  for (const ftsQuery of queryVariants) {
     let provSql = `
       SELECT
         lp.document_id,
@@ -66,93 +85,112 @@ export async function buildLegalStance(
     `;
     const provParams: (string | number)[] = [ftsQuery];
 
-    if (input.document_id) {
+    if (resolvedDocId) {
       provSql += ` AND lp.document_id = ?`;
-      provParams.push(input.document_id);
+      provParams.push(resolvedDocId);
     }
 
     provSql += ` ORDER BY relevance LIMIT ?`;
-    provParams.push(limit);
+    provParams.push(fetchLimit);
 
-    return db.prepare(provSql).all(...provParams) as ProvisionHit[];
-  };
-
-  const runHistoricalProvisionQuery = (ftsQuery: string): ProvisionHit[] => {
-    if (!asOfDate) {
-      return [];
+    try {
+      const rows = db.prepare(provSql).all(...provParams) as ProvisionHit[];
+      if (rows.length > 0) {
+        queryStrategy = ftsQuery === queryVariants[0] ? 'exact' : 'fallback';
+        const provisions = deduplicateResults(rows, limit);
+        return {
+          results: {
+            query: input.query,
+            provisions,
+            total_citations: provisions.length,
+            as_of_date: asOfDate,
+          },
+          _metadata: {
+            ...generateResponseMetadata(db),
+            ...(queryStrategy === 'fallback' ? { query_strategy: 'broadened' as const } : {}),
+          },
+        };
+      }
+    } catch {
+      continue;
     }
+  }
 
-    let provSql = `
-      WITH ranked_versions AS (
-        SELECT
-          lpv.document_id,
-          ld.title as document_title,
-          lpv.provision_ref,
-          lpv.title,
-          substr(lpv.content, 1, 320) as snippet,
-          0.0 as relevance,
-          row_number() OVER (
-            PARTITION BY lpv.document_id, lpv.provision_ref
-            ORDER BY COALESCE(lpv.valid_from, '0000-01-01') DESC, lpv.id DESC
-          ) as version_rank
-        FROM provision_versions_fts
-        JOIN legal_provision_versions lpv ON lpv.id = provision_versions_fts.rowid
-        JOIN legal_documents ld ON ld.id = lpv.document_id
-        WHERE provision_versions_fts MATCH ?
-          AND (lpv.valid_from IS NULL OR lpv.valid_from <= ?)
-          AND (lpv.valid_to IS NULL OR lpv.valid_to > ?)
-    `;
-    const provParams: (string | number)[] = [ftsQuery, asOfDate, asOfDate];
-
-    if (input.document_id) {
-      provSql += ` AND lpv.document_id = ?`;
-      provParams.push(input.document_id);
-    }
-
-    provSql += `
-      )
+  // LIKE fallback — final tier when FTS5 returns no results
+  {
+    const likePattern = buildLikePattern(sanitizeFtsInput(input.query));
+    let likeSql = `
       SELECT
-        document_id,
-        document_title,
-        provision_ref,
-        title,
-        snippet,
-        relevance
-      FROM ranked_versions
-      WHERE version_rank = 1
-      ORDER BY relevance
-      LIMIT ?
+        lp.document_id,
+        ld.title as document_title,
+        lp.provision_ref,
+        lp.title,
+        substr(lp.content, 1, 200) as snippet,
+        0 as relevance
+      FROM legal_provisions lp
+      JOIN legal_documents ld ON ld.id = lp.document_id
+      WHERE lp.content LIKE ?
     `;
-    provParams.push(limit);
+    const likeParams: (string | number)[] = [likePattern];
 
-    return db.prepare(provSql).all(...provParams) as ProvisionHit[];
-  };
-
-  const runProvisionQuery = (ftsQuery: string): ProvisionHit[] => {
-    if (!asOfDate) {
-      return runCurrentProvisionQuery(ftsQuery);
+    if (resolvedDocId) {
+      likeSql += ` AND lp.document_id = ?`;
+      likeParams.push(resolvedDocId);
     }
 
-    const historicalResults = runHistoricalProvisionQuery(ftsQuery);
-    if (historicalResults.length > 0) {
-      return historicalResults;
+    likeSql += ` LIMIT ?`;
+    likeParams.push(fetchLimit);
+
+    try {
+      const rows = db.prepare(likeSql).all(...likeParams) as ProvisionHit[];
+      if (rows.length > 0) {
+        const provisions = deduplicateResults(rows, limit);
+        return {
+          results: {
+            query: input.query,
+            provisions,
+            total_citations: provisions.length,
+            as_of_date: asOfDate,
+          },
+          _metadata: {
+            ...generateResponseMetadata(db),
+            query_strategy: 'like_fallback',
+          },
+        };
+      }
+    } catch {
+      // LIKE query failed
     }
-
-    return runCurrentProvisionQuery(ftsQuery);
-  };
-
-  let provisions = runProvisionQuery(queryVariants.primary);
-  if (provisions.length === 0 && queryVariants.fallback) {
-    provisions = runProvisionQuery(queryVariants.fallback);
   }
 
   return {
     results: {
       query: input.query,
-      provisions,
-      total_citations: provisions.length,
+      provisions: [],
+      total_citations: 0,
       as_of_date: asOfDate,
     },
     _metadata: generateResponseMetadata(db)
   };
+}
+
+/**
+ * Deduplicate results by document_title + provision_ref.
+ * Duplicate document IDs (numeric vs slug) cause the same provision to appear twice.
+ * Keeps the first (highest-ranked) occurrence.
+ */
+function deduplicateResults(
+  rows: ProvisionHit[],
+  limit: number,
+): ProvisionHit[] {
+  const seen = new Set<string>();
+  const deduped: ProvisionHit[] = [];
+  for (const row of rows) {
+    const key = `${row.document_title}::${row.provision_ref}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(row);
+    if (deduped.length >= limit) break;
+  }
+  return deduped;
 }
