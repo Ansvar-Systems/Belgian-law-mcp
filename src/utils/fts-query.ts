@@ -2,44 +2,104 @@
  * FTS5 query builder for Belgian Law MCP.
  */
 
-const EXPLICIT_FTS_SYNTAX = /["""]|(\bAND\b)|(\bOR\b)|(\bNOT\b)|\*$/;
+const FTS5_BOOLEAN_OPS = /\b(AND|OR|NOT)\b/;
 
 /**
- * Sanitize user input before using in FTS5 queries.
- * Strips characters that have special meaning in FTS5 syntax
- * to prevent query syntax errors or injection.
+ * Detect whether input contains FTS5 boolean operators.
+ */
+export function hasBooleanOperators(input: string): boolean {
+  return FTS5_BOOLEAN_OPS.test(input);
+}
+
+/**
+ * Sanitize user input for safe FTS5 queries.
+ * Preserves boolean operators (AND, OR, NOT) when detected.
+ * Preserves trailing * on words for FTS5 prefix search.
  */
 export function sanitizeFtsInput(input: string): string {
+  if (hasBooleanOperators(input)) {
+    return input.replace(/[{}[\]^~*:]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  // Preserve trailing * on words (FTS5 prefix search) but strip other special chars
   return input
-    .replace(/["""\u201C\u201D]/g, '') // smart and straight double quotes
-    .replace(/['''\u2018\u2019]/g, '') // smart and straight single quotes
-    .replace(/[{}[\]()^~:;]/g, '')     // FTS5 operators and brackets
+    .replace(/['"(){}[\]^~:]/g, ' ')
+    .replace(/\*(?!\s|$)/g, ' ')    // strip * unless at end of word
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-export interface FtsQueryVariants {
-  primary: string;
-  fallback?: string;
+/**
+ * Truncate common suffixes for stemming fallback.
+ */
+function stemWord(word: string): string | null {
+  if (word.length < 5) return null;
+  const lower = word.toLowerCase();
+  for (const suffix of [
+    'ies', 'ing', 'ers', 'tion', 'ment', 'ness',
+    'able', 'ible', 'ous', 'ive', 'ed', 'es', 'er', 'ly', 's',
+  ]) {
+    if (lower.endsWith(suffix) && lower.length - suffix.length >= 3) {
+      return lower.slice(0, -suffix.length);
+    }
+  }
+  return null;
 }
 
-export function buildFtsQueryVariants(query: string): FtsQueryVariants {
-  const trimmed = query.trim();
-
-  if (EXPLICIT_FTS_SYNTAX.test(trimmed)) {
-    return { primary: trimmed };
+/**
+ * Build FTS5 query variants for a search term.
+ * Returns variants in order of specificity (most specific first):
+ * 1. Exact phrase match
+ * 2. All terms required (AND)
+ * 3. Prefix AND (last term gets prefix wildcard)
+ * 4. Stemmed prefix (suffix-truncated + wildcard)
+ * 5. Any term matches (OR) — broad fallback
+ */
+export function buildFtsQueryVariants(sanitized: string): string[] {
+  if (!sanitized || sanitized.trim().length === 0) {
+    return [];
   }
 
-  const tokens = trimmed
-    .split(/\s+/)
-    .filter(t => t.length > 0)
-    .map(t => t.replace(/[^\w\s-]/g, ''));
-
-  if (tokens.length === 0) {
-    return { primary: trimmed };
+  if (hasBooleanOperators(sanitized)) {
+    return [sanitized];
   }
 
-  const primary = tokens.map(t => `"${t}"*`).join(' ');
-  const fallback = tokens.map(t => `${t}*`).join(' OR ');
+  const terms = sanitized.split(/\s+/).filter(t => t.length > 0);
+  if (terms.length === 0) return [];
 
-  return { primary, fallback };
+  const variants: string[] = [];
+
+  if (terms.length > 1) {
+    variants.push(`"${terms.join(' ')}"`);
+    variants.push(terms.join(' AND '));
+    variants.push([...terms.slice(0, -1), `${terms[terms.length - 1]}*`].join(' AND '));
+  } else {
+    variants.push(terms[0]);
+    if (terms[0].length >= 3) {
+      variants.push(`${terms[0]}*`);
+    }
+  }
+
+  const stemmedTerms = terms.map(t => {
+    const stem = stemWord(t);
+    return stem ? `${stem}*` : t;
+  });
+  if (stemmedTerms.some((s, i) => s !== terms[i])) {
+    variants.push(stemmedTerms.join(' AND '));
+  }
+
+  if (terms.length > 1) {
+    variants.push(terms.join(' OR '));
+  }
+
+  return variants;
+}
+
+/**
+ * Build a SQL LIKE pattern from search terms.
+ * Used as a final fallback when FTS5 returns no results.
+ */
+export function buildLikePattern(query: string): string {
+  const terms = query.trim().split(/\s+/).filter(t => t.length > 0);
+  if (terms.length === 0) return '%';
+  return `%${terms.join('%')}%`;
 }
