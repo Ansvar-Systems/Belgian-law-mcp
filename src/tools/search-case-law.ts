@@ -39,7 +39,9 @@ export async function searchCaseLaw(
   }
 
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const queryVariants = buildFtsQueryVariants(sanitizeFtsInput(input.query));
+  const variants = buildFtsQueryVariants(sanitizeFtsInput(input.query));
+  const primaryQuery = variants[0];
+  const fallbackQuery = variants.length > 1 ? variants[variants.length - 1] : undefined;
 
   const run = (ftsQuery: string): CaseLawResult[] => {
     let sql = `
@@ -76,11 +78,11 @@ export async function searchCaseLaw(
     return db.prepare(sql).all(...params) as CaseLawResult[];
   };
 
-  const primary = run(queryVariants.primary);
+  const primary = primaryQuery ? run(primaryQuery) : [];
   const results =
-    primary.length > 0 || !queryVariants.fallback
+    primary.length > 0 || !fallbackQuery
       ? primary
-      : run(queryVariants.fallback);
+      : run(fallbackQuery);
 
   return { results, _metadata: generateResponseMetadata(db) };
 }
