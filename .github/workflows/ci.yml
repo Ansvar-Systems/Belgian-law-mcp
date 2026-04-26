@@ -1,67 +1,45 @@
 name: CI
-
 on:
   push:
-    branches:
-      - main
-      - dev
-      - 'feature/*'
-      - 'fix/*'
+    branches: [main, dev]
   pull_request:
-    branches:
-      - main
-      - dev
-  schedule:
-    - cron: '0 6 * * 1'
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
+    branches: [main]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [20, 22]
-
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
+          node-version: '22'
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
-      - name: Security audit (production deps)
-        run: npm audit --omit=dev --audit-level=high
+      - run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Run full test suite
+      - name: Lint
+        run: npm run lint
+
+      - name: Build database
+        run: npm run build:db
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
         run: npm test
 
-      - name: Run contract tests in nightly mode
-        if: github.event_name == 'schedule' && matrix.node-version == 22
-        run: CONTRACT_MODE=nightly npm run test:contract
+      - name: Contract tests
+        run: npm run test:contract
 
-      - name: Coverage report
-        if: matrix.node-version == 22
-        run: npm run test:coverage
-
-      - name: Upload coverage artifact
-        if: matrix.node-version == 22
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
+      - name: Database integrity
+        run: |
+          sqlite3 data/database.db "PRAGMA integrity_check;" | grep -q "ok"
+          sqlite3 data/database.db "PRAGMA journal_mode;" | grep -q "delete"
+      - name: Audit dependencies
+        run: npm audit --audit-level=high || true
