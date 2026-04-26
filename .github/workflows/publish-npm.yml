@@ -69,6 +69,17 @@ jobs:
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # Probe whether this MCP has a build:db script and whether it ships
+          # a DB. The template is shared across the fleet; not every MCP has
+          # a DB. These flags let downstream steps skip cleanly without
+          # masking real failures (the previous `2>/dev/null || true` masked
+          # genuine build:db breakage and could publish a package missing
+          # data/database.db).
+          HAS_BUILD_DB=$(node -e "process.stdout.write(String(Boolean((require('./package.json').scripts || {})['build:db'])))")
+          DECLARES_DB=$(node -e "const f=require('./package.json').files||[]; process.stdout.write(String(f.some(x => x==='data/database.db' || x==='data')))")
+          echo "has_build_db=${HAS_BUILD_DB}" >> "$GITHUB_OUTPUT"
+          echo "declares_db=${DECLARES_DB}" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         if: steps.check.outputs.already_published == 'false'
         run: npm ci
@@ -78,8 +89,17 @@ jobs:
         run: npm run build
 
       - name: Build database
-        if: steps.check.outputs.already_published == 'false'
-        run: npm run build:db 2>/dev/null || true
+        if: steps.check.outputs.already_published == 'false' && steps.check.outputs.has_build_db == 'true'
+        run: npm run build:db
+
+      - name: Verify packaged database
+        if: steps.check.outputs.already_published == 'false' && steps.check.outputs.declares_db == 'true'
+        run: |
+          if [ ! -s data/database.db ]; then
+            echo "::error::data/database.db is missing or empty after build:db; refusing to publish a package that declares it in 'files'."
+            exit 1
+          fi
+          echo "data/database.db: $(stat -c%s data/database.db) bytes"
 
       - name: Publish
         if: steps.check.outputs.already_published == 'false'
