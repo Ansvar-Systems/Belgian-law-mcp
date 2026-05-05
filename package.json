@@ -1,7 +1,7 @@
 {
   "name": "@ansvar/belgian-law-mcp",
   "version": "1.0.0",
-  "description": "Belgian Law MCP — French and Dutch legislation via Model Context Protocol",
+  "description": "Belgian Law MCP \u2014 French and Dutch legislation via Model Context Protocol",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -9,7 +9,6 @@
   },
   "files": [
     "dist",
-    "data/database.db",
     "server.json",
     "manifest.json"
   ],

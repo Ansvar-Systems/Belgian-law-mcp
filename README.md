@@ -1,447 +1,167 @@
-# Belgian Law MCP Server
+# Belgian Law MCP
 
-**The Belgian Official Gazette (Belgisch Staatsblad / Moniteur belge) alternative for the AI age.**
+MCP server for Belgian Law — 5,775 statutes from www.ejustice.just.fgov.be
 
-[![npm version](https://badge.fury.io/js/@ansvar%2Fbelgian-law-mcp.svg)](https://www.npmjs.com/package/@ansvar/belgian-law-mcp)
-[![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue)](https://registry.modelcontextprotocol.io)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub stars](https://img.shields.io/github/stars/Ansvar-Systems/Belgium-law-mcp?style=social)](https://github.com/Ansvar-Systems/Belgium-law-mcp)
-[![CI](https://github.com/Ansvar-Systems/Belgium-law-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Ansvar-Systems/Belgium-law-mcp/actions/workflows/ci.yml)
-[![Daily Data Check](https://github.com/Ansvar-Systems/Belgium-law-mcp/actions/workflows/check-updates.yml/badge.svg)](https://github.com/Ansvar-Systems/Belgium-law-mcp/actions/workflows/check-updates.yml)
-[![Database](https://img.shields.io/badge/database-pre--built-green)](docs/EU_INTEGRATION_GUIDE.md)
-[![Provisions](https://img.shields.io/badge/provisions-142%2C743-blue)](docs/EU_INTEGRATION_GUIDE.md)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-spec--compliant-green.svg)](https://modelcontextprotocol.io)
+[![Jurisdiction](https://img.shields.io/badge/Jurisdiction-BE-informational.svg)](#coverage)
 
-Query **5,775 Belgian statutes** -- from the loi du 30 juillet 2018 (protection des données) and Code pénal to the Code civil, Code des sociétés et des associations, and more -- directly from Claude, Cursor, or any MCP-compatible client.
+## What this is
 
-If you're building legal tech, compliance tools, or doing Belgian legal research, this is your verified reference database.
+This server indexes the legal materials listed under **Sources** below and
+exposes them via the Model Context Protocol. Part of the Ansvar MCP fleet —
+source-available servers published for self-hosting.
 
-Built by [Ansvar Systems](https://ansvar.eu) -- Stockholm, Sweden
+It makes no outbound network calls except to the upstream sources during
+ingestion — no analytics, no phone-home.
 
----
+## Coverage
 
-## Why This Exists
+- **Corpus:** Belgian Law — 5,775 statutes, 142,743 provisions
+- **Jurisdiction code:** `BE`
+- **Corpus snapshot:** 2026-02-27
 
-Belgian legal research means navigating the bilingual Belgisch Staatsblad / Moniteur belge, reconciling French and Dutch texts, and manually cross-referencing between federal, regional, and community law. Belgium also hosts the EU's primary institutions -- making Belgian law particularly relevant for EU regulatory compliance work. Whether you're:
+The corpus is rebuilt from the upstream sources by the included ingestion script; re-run periodically to refresh.
 
-- A **lawyer** validating citations in a brief or contract
-- A **compliance officer** checking GDPR implementation or Loi anti-blanchiment requirements
-- A **legal tech developer** building tools on Belgian or EU institutional law
-- A **researcher** tracing EU institutional decisions back to Belgian implementation
+See **Sources** below for source URLs, terms, and reuse conditions.
 
-...you shouldn't need dozens of browser tabs and multilingual PDF cross-referencing. Ask Claude. Get the exact provision. With context.
+### Hosted gateway also covers (premium tier only)
 
-This MCP server makes Belgian law **searchable, cross-referenceable, and AI-readable**.
+The hosted gateway extends this corpus with material that is **not** in the
+self-host build — distinct sourcing, different licensing, paid access only:
 
----
+- **Agency guidance:** 196,145 items
 
-## Quick Start
+Self-hosting from this repo gives you the statutes and provisions only. The
+premium materials require a `team` or `company` gateway subscription.
 
-### Use Remotely (No Install Needed)
+## Why this exists
 
-> Connect directly to the hosted version -- zero dependencies, nothing to install.
+LLMs answering compliance, security, or legal questions from training data
+alone will fabricate citations — confidently producing article numbers,
+statute names, and source URLs that do not exist, or that do not say what
+the model claims. This MCP exists so an agent can call a tool that returns
+the real text, the real identifier, and the real source URL straight from
+the indexed materials — and ground an answer rather than recall it.
 
-**Endpoint:** `https://mcp.ansvar.eu/law-be/mcp`
+One MCP, one corpus. The point is composition.
 
-| Client | How to Connect |
-|--------|---------------|
-| **Claude.ai** | Settings > Connectors > Add Integration > paste URL |
-| **Claude Code** | `claude mcp add belgian-law --transport http https://mcp.ansvar.eu/law-be/mcp` |
-| **Claude Desktop** | Add to config (see below) |
-| **GitHub Copilot** | Add to VS Code settings (see below) |
+The **Ansvar Gateway** ([ansvar.eu](https://ansvar.eu)) joins this MCP
+with the rest of the Ansvar fleet behind a single authenticated
+endpoint — 300+ servers covering legal jurisdictions, EU
+regulations, security frameworks, sector regulators, privacy-pattern
+catalogues, and risk-scoring tools. That lets an agent run cross-domain
+workflows that no single MCP can serve alone:
 
-**Claude Desktop** -- add to `claude_desktop_config.json`:
+- **Threat model and TARA.** Threat enumeration → known component
+  vulnerabilities → severity scoring → applicable AI, cybersecurity, and
+  automotive obligations → privacy threats. Every finding traceable to
+  its source.
+- **Gap analysis.** Target framework requirements → current-state
+  evidence → unmet obligations → remediation guidance and authority
+  opinions. Every gap traceable to the specific requirement that flagged
+  it.
+- **Data Protection Impact Assessment.** Privacy regulation articles →
+  national DPA guidance → privacy-pattern catalogue → applicable case
+  law.
 
-```json
-{
-  "mcpServers": {
-    "belgian-law": {
-      "type": "url",
-      "url": "https://mcp.ansvar.eu/law-be/mcp"
-    }
-  }
-}
-```
+### Getting high-quality citations
 
-**GitHub Copilot** -- add to VS Code `settings.json`:
+Citation accuracy degrades when an agent's context fills up. Long inputs
+cause retrieval-stage drift — the model recalls claim text correctly but
+misattributes the source. Two practices keep accuracy high:
 
-```json
-{
-  "github.copilot.chat.mcp.servers": {
-    "belgian-law": {
-      "type": "http",
-      "url": "https://mcp.ansvar.eu/law-be/mcp"
-    }
-  }
-}
-```
+1. **Focused first pass, checking-agent second pass.** Query a small,
+   relevant set of MCPs first, then run a separate agent whose only job
+   is to re-resolve each citation against the source MCP and flag any
+   that no longer match. The checking agent uses the same MCP tools as
+   the synthesis agent.
+2. **Pull the source text verbatim when in doubt.** Every citation an
+   agent emits points back to a tool call against this server. You — or
+   another agent — can call the same tool with the same identifier and
+   read the raw statute, article, or standard text directly. If the
+   verbatim text doesn't support what the agent claimed, the citation
+   was misused, regardless of whether the identifier was real.
 
-### Use Locally (npm)
+Both patterns work the same way self-hosted or through the gateway.
+
+## Two ways to use it
+
+**Self-host (free, Apache 2.0)** — clone this repo, run the ingestion script to build your local database from the listed upstream sources, point your MCP client at the local server. Instructions below.
+
+**Use the hosted gateway** — for production use against the curated,
+kept-fresh corpus across the full Ansvar MCP fleet, with citation enrichment
+and multi-jurisdiction fan-out — see [ansvar.eu](https://ansvar.eu).
+
+## Self-hosting
+
+### Install
+
+> Requires Node 18+.
 
 ```bash
-npx @ansvar/belgian-law-mcp
-```
-
-**Claude Desktop** -- add to `claude_desktop_config.json`:
-
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "belgian-law": {
-      "command": "npx",
-      "args": ["-y", "@ansvar/belgian-law-mcp"]
-    }
-  }
-}
-```
-
-**Cursor / VS Code:**
-
-```json
-{
-  "mcp.servers": {
-    "belgian-law": {
-      "command": "npx",
-      "args": ["-y", "@ansvar/belgian-law-mcp"]
-    }
-  }
-}
-```
-
-## Example Queries
-
-Once connected, just ask naturally -- in French, Dutch, or English:
-
-**French:**
-- *"Que dit la loi du 30 juillet 2018 sur la protection des données (article 5) ?"*
-- *"Recherche des dispositions sur la 'protection des données' dans le droit belge"*
-- *"Quelles directives européennes la loi du 30 juillet 2018 met-elle en œuvre ?"*
-- *"Trouvez les sanctions pénales dans le Code pénal pour fraude informatique"*
-- *"Qu'est-ce que le Code des sociétés et des associations dit sur la responsabilité des administrateurs ?"*
-
-**Dutch:**
-- *"Wat zegt de wet van 30 juli 2018 over toestemming voor gegevensverwerking?"*
-- *"Zoek naar 'gegevensbescherming' in het Belgische recht"*
-- *"Welke Belgische wetten implementeren de AVG (GDPR)?"*
-
-**English:**
-- *"Which Belgian laws implement the GDPR?"*
-- *"Compare NIS2 implementation requirements across Belgian statutes"*
-
----
-
-## What's Included
-
-| Category | Count | Details |
-|----------|-------|---------|
-| **Statutes** | 5,775 statutes | Comprehensive Belgian federal legislation |
-| **Provisions** | 142,743 sections | Full-text searchable with FTS5 |
-| **Agency Guidance** | 10 documents | GBA/APD regulatory guidance (Premium) |
-| **Database Size** | ~126 MB | Optimized SQLite, portable |
-| **Daily Updates** | Automated | Freshness checks against Belgisch Staatsblad |
-
-**Verified data only** -- every citation is validated against official sources (ejustice.just.fgov.be). Zero LLM-generated content.
-
----
-
-## See It In Action
-
-### Why This Works
-
-**Verbatim Source Text (No LLM Processing):**
-- All statute text is ingested from the Belgisch Staatsblad / Moniteur belge (ejustice.just.fgov.be)
-- Provisions are returned **unchanged** from SQLite FTS5 database rows
-- Zero LLM summarization or paraphrasing -- the database contains regulation text, not AI interpretations
-
-**Smart Context Management:**
-- Search returns ranked provisions with BM25 scoring (safe for context)
-- Provision retrieval gives exact text by publication date + article number
-- Cross-references help navigate without loading everything at once
-
-**Technical Architecture:**
-```
-ejustice.just.fgov.be → Parse → SQLite → FTS5 snippet() → MCP response
-                          ↑                      ↑
-                   Provision parser       Verbatim database query
-```
-
-### Traditional Research vs. This MCP
-
-| Traditional Approach | This MCP Server |
-|---------------------|-----------------|
-| Search Belgisch Staatsblad by date | Search by plain French/Dutch: *"protection des données"* |
-| Navigate multilingual statute texts manually | Get the exact provision with context |
-| Manual cross-referencing between laws | `build_legal_stance` aggregates across sources |
-| "Is this statute still in force?" → check manually | `check_currency` tool → answer in seconds |
-| Find EU basis → dig through EUR-Lex | `get_eu_basis` → linked EU directives instantly |
-| Check ejustice for updates | Daily automated freshness checks |
-| No API, no integration | MCP protocol → AI-native |
-
-**Traditional:** Search ejustice → Navigate HTML → Ctrl+F → Cross-reference French/Dutch texts → Check EUR-Lex → Repeat
-
-**This MCP:** *"Quelles obligations la loi du 30 juillet 2018 impose-t-elle et quelle directive EU la sous-tend ?"* → Done.
-
----
-
-## Available Tools (13)
-
-### Core Legal Research Tools (8)
-
-| Tool | Description |
-|------|-------------|
-| `search_legislation` | FTS5 search on 142,743 provisions with BM25 ranking |
-| `get_provision` | Retrieve specific provision by statute identifier + article |
-| `validate_citation` | Validate citation against database (zero-hallucination check) |
-| `build_legal_stance` | Aggregate citations from statutes and agency guidance |
-| `format_citation` | Format citations per Belgian conventions (full/short/pinpoint) |
-| `check_currency` | Check if statute is in force, amended, or repealed |
-| `list_sources` | List all available statutes with metadata and data provenance |
-| `about` | Server info, capabilities, dataset statistics, and coverage summary |
-
-### EU Law Integration Tools (5)
-
-| Tool | Description |
-|------|-------------|
-| `get_eu_basis` | Get EU directives/regulations for Belgian statute |
-| `get_belgian_implementations` | Find Belgian laws implementing EU act |
-| `search_eu_implementations` | Search EU documents with Belgian implementation counts |
-| `get_provision_eu_basis` | Get EU law references for specific provision |
-| `validate_eu_compliance` | Check implementation status (requires EU MCP) |
-
----
-
-## EU Law Integration
-
-Belgium is an EU member state and the home of the European Commission, European Council, and most EU agencies. Belgian law is uniquely positioned at the intersection of EU institutional decision-making and national transposition.
-
-| Metric | Value |
-|--------|-------|
-| **EU Member Since** | 1957 (founding member) |
-| **GDPR Implementation** | Loi du 30 juillet 2018 |
-| **NIS2 Implementation** | Loi du 26 avril 2024 (cybersécurité) |
-| **Data Authority (FR)** | Autorité de protection des données (APD) |
-| **Data Authority (NL)** | Gegevensbeschermingsautoriteit (GBA) |
-| **EUR-Lex Integration** | Automated metadata fetching |
-
-### Key Belgian EU Implementations
-
-- **GDPR** (2016/679) → Loi du 30 juillet 2018 relative à la protection des personnes physiques
-- **NIS2 Directive** (2022/2555) → Loi du 26 avril 2024 (NIS2 transposition)
-- **AI Act** (2024/1689) → Belgian implementation in progress
-- **eIDAS** (910/2014) → Loi du 21 juillet 2016 (signatures électroniques)
-- **AML Directive** (2015/849) → Loi du 18 septembre 2017 (anti-blanchiment)
-- **Consumer Rights Directive** (2011/83) → Code de droit économique, Livre VI
-
-> **Note on language:** Belgian law is officially trilingual. The database includes both French and Dutch texts for federal statutes. German-language texts (for the German-speaking Community) are not included in the current release.
-
-See [EU_INTEGRATION_GUIDE.md](docs/EU_INTEGRATION_GUIDE.md) for detailed documentation.
-
----
-
-## Data Sources & Freshness
-
-All content is sourced from authoritative Belgian legal databases:
-
-- **[ejustice.just.fgov.be](https://www.ejustice.just.fgov.be/)** -- Official Belgian law database (Justice)
-- **[belgisch-staatsblad.be](https://www.belgisch-staatsblad.be/)** -- Belgisch Staatsblad / Moniteur belge
-- **[EUR-Lex](https://eur-lex.europa.eu/)** -- Official EU law database (metadata only)
-
-### Data Provenance
-
-| Field | Value |
-|-------|-------|
-| **Authority** | Service public fédéral Justice / Federale Overheidsdienst Justitie |
-| **Retrieval method** | ejustice.just.fgov.be HTML parse |
-| **Languages** | French and Dutch (both official federal languages) |
-| **License** | Belgian public data (open government) |
-| **Coverage** | 5,775 federal statutes |
-| **Last ingested** | 2026-02-25 |
-
-### Automated Freshness Checks (Daily)
-
-A [daily GitHub Actions workflow](.github/workflows/check-updates.yml) monitors all data sources:
-
-| Source | Check | Method |
-|--------|-------|--------|
-| **Statute amendments** | ejustice API date comparison | All 5,775 statutes checked |
-| **New statutes** | Belgisch Staatsblad publication feed | Diffed against database |
-| **EU reference staleness** | Git commit timestamps | Flagged if >90 days old |
-
----
-
-## Security
-
-This project uses multiple layers of automated security scanning:
-
-| Scanner | What It Does | Schedule |
-|---------|-------------|----------|
-| **CodeQL** | Static analysis for security vulnerabilities | Weekly + PRs |
-| **Semgrep** | SAST scanning (OWASP top 10, secrets, TypeScript) | Every push |
-| **Gitleaks** | Secret detection across git history | Every push |
-| **Trivy** | CVE scanning on filesystem and npm dependencies | Daily |
-| **Docker Security** | Container image scanning + SBOM generation | Daily |
-| **Socket.dev** | Supply chain attack detection | PRs |
-| **OSSF Scorecard** | OpenSSF best practices scoring | Weekly |
-| **Dependabot** | Automated dependency updates | Weekly |
-
-See [SECURITY.md](SECURITY.md) for the full policy and vulnerability reporting.
-
----
-
-## Important Disclaimers
-
-### Legal Advice
-
-> **THIS TOOL IS NOT LEGAL ADVICE**
->
-> Statute text is sourced from official ejustice.just.fgov.be publications. However:
-> - This is a **research tool**, not a substitute for professional legal counsel
-> - **Court case coverage is limited** -- do not rely solely on this for case law research
-> - **Verify critical citations** against primary sources for court filings
-> - **EU cross-references** are extracted from Belgian statute text, not EUR-Lex full text
-> - **Bilingual system** -- French and Dutch texts both have official status; always verify the authoritative language version for your jurisdiction
-
-**Before using professionally, read:** [DISCLAIMER.md](DISCLAIMER.md) | [PRIVACY.md](PRIVACY.md)
-
-### Client Confidentiality
-
-Queries go through the Claude API. For privileged or confidential matters, use on-premise deployment. See [PRIVACY.md](PRIVACY.md) for Ordre des barreaux francophones et germanophone (OBFG) / Orde van Vlaamse Balies (OVB) compliance guidance.
-
----
-
-## Documentation
-
-- **[EU Integration Guide](docs/EU_INTEGRATION_GUIDE.md)** -- Detailed EU cross-reference documentation
-- **[EU Usage Examples](docs/EU_USAGE_EXAMPLES.md)** -- Practical EU lookup examples
-- **[Security Policy](SECURITY.md)** -- Vulnerability reporting and scanning details
-- **[Disclaimer](DISCLAIMER.md)** -- Legal disclaimers and professional use notices
-- **[Privacy](PRIVACY.md)** -- Client confidentiality and data handling
-
----
-
-## Development
-
-### Setup
-
-```bash
-git clone https://github.com/Ansvar-Systems/Belgium-law-mcp
-cd Belgium-law-mcp
+git clone https://github.com/Ansvar-Systems/Belgian-law-mcp.git
+cd Belgian-law-mcp
 npm install
+```
+
+### Build
+
+```bash
 npm run build
-npm test
 ```
 
-### Running Locally
+### Build the database
 
 ```bash
-npm run dev                                       # Start MCP server
-npx @anthropic/mcp-inspector node dist/index.js   # Test with MCP Inspector
+npm run ingest && npm run build:db
 ```
 
-### Data Management
+Ingestion fetches from the upstream source(s) listed under **Sources** below and builds a local SQLite database. Re-run periodically to refresh. Review the source's published terms before running ingestion in a commercial deployment, and inspect the ingestion script in this repo for the actual access method (open API, bulk download, HTML scrape, or feed).
 
-```bash
-npm run ingest                     # Ingest statutes from ejustice
-npm run build:db                   # Rebuild SQLite database
-npm run drift:detect               # Run drift detection
-npm run check-updates              # Check for amendments and new statutes
-```
+Ingestion is a snapshot — your local copy goes stale until you re-run it. The hosted gateway corpus is refreshed continuously.
 
-### Performance
+### Configure your MCP client
 
-- **Search Speed:** <100ms for most FTS5 queries
-- **Database Size:** ~126 MB (efficient, portable)
-- **Reliability:** 100% ingestion success rate
-
----
-
-## Related Projects: Complete Compliance Suite
-
-This server is part of **Ansvar's Compliance Suite** -- MCP servers that work together for end-to-end compliance coverage:
-
-### [@ansvar/eu-regulations-mcp](https://github.com/Ansvar-Systems/EU_compliance_MCP)
-**Query 49 EU regulations directly from Claude** -- GDPR, AI Act, DORA, NIS2, MiFID II, eIDAS, and more. Full regulatory text with article-level search. `npx @ansvar/eu-regulations-mcp`
-
-### @ansvar/belgian-law-mcp (This Project)
-**Query 5,775 Belgian statutes directly from Claude** -- loi protection données, Code pénal, Code civil, and more. Full provision text with EU cross-references. `npx @ansvar/belgian-law-mcp`
-
-### [@ansvar/dutch-law-mcp](https://github.com/Ansvar-Systems/dutch-law-mcp)
-**Query Dutch legislation** -- AVG, Wetboek van Strafrecht, Burgerlijk Wetboek, and more. `npx @ansvar/dutch-law-mcp`
-
-### [@ansvar/security-controls-mcp](https://github.com/Ansvar-Systems/security-controls-mcp)
-**Query 261 security frameworks** -- ISO 27001, NIST CSF, SOC 2, CIS Controls, SCF, and more. `npx @ansvar/security-controls-mcp`
-
-**70+ national law MCPs** covering Austria, Denmark, Finland, France, Germany, Ireland, Italy, Netherlands, Norway, Poland, Portugal, Slovenia, Spain, Sweden, Switzerland, UK, and more.
-
----
-
-## Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-Priority areas:
-- Court case law expansion (Cour de cassation, Conseil d'État)
-- EU regulation cross-reference expansion
-- German-language Community texts
-- Regional law coverage (Wallonia, Flanders, Brussels-Capital)
-- Historical statute versions and amendment tracking
-
----
-
-## Roadmap
-
-- [x] Core statute database with FTS5 search
-- [x] Full corpus ingestion (5,775 statutes, 142,743 provisions)
-- [x] EU law integration tools
-- [x] Vercel Streamable HTTP deployment
-- [x] npm package publication
-- [x] Daily freshness checks
-- [ ] Court case law expansion
-- [ ] Historical statute versions (amendment tracking)
-- [ ] German-language Community law
-- [ ] Regional/community legislation coverage
-
----
-
-## Citation
-
-If you use this MCP server in academic research:
-
-```bibtex
-@software{belgian_law_mcp_2026,
-  author = {Ansvar Systems AB},
-  title = {Belgian Law MCP Server: Production-Grade Legal Research Tool},
-  year = {2026},
-  url = {https://github.com/Ansvar-Systems/Belgium-law-mcp},
-  note = {5,775 Belgian statutes with 142,743 provisions and EU law cross-references}
+```json
+{
+  "mcpServers": {
+    "belgian-law-mcp": {
+      "command": "node",
+      "args": ["dist/index.js"]
+    }
+  }
 }
 ```
 
----
+## Sources
+
+| Source | Source URL | Terms / license URL | License basis | Attribution required | Commercial use | Redistribution / caching | Notes |
+|---|---|---|---|---|---|---|---|
+| [Justel](https://www.ejustice.just.fgov.be) | https://www.ejustice.just.fgov.be | [Terms](https://www.ejustice.just.fgov.be) | Government open data | Recommended | Yes | Yes | Belgian Moniteur Belge / Belgisch Staatsblad. Statutes excluded from copyright per Art. XI.172 §2 Code de droit économique. |
+
+## What this repository does not provide
+
+This repository's source — the MCP server code, schema, and ingestion script — is licensed under Apache
+2.0. The license below covers the code in this repository only; it does not
+extend to the upstream legal materials.
+
+Running ingestion may download, cache, transform, and index materials from the listed upstream sources. You are responsible for confirming that your use of those materials complies with the source terms, attribution requirements, robots/rate limits, database rights, copyright rules, and any commercial-use or redistribution limits that apply in your jurisdiction.
 
 ## License
 
-Apache License 2.0. See [LICENSE](./LICENSE) for details.
+Apache 2.0 — see [LICENSE](LICENSE). Commercial use, modification, and
+redistribution of **the source code in this repository** are permitted under
+that license. The license does not extend to upstream legal materials downloaded by the ingestion script; those remain governed by the source jurisdictions' own publishing terms (see Sources above).
 
-### Data Licenses
+## The Ansvar gateway
 
-- **Statutes & Legislation:** Service public fédéral Justice (Belgian open government data)
-- **EU Metadata:** EUR-Lex (EU public domain)
-
----
-
-## About Ansvar Systems
-
-We build AI-accelerated compliance and legal research tools for the European market. This MCP server started as our internal reference tool for Belgian and EU institutional law -- turns out everyone working at the EU-national interface has the same research frustrations.
-
-So we're open-sourcing it. Navigating 5,775 statutes across two languages shouldn't require a law degree in both French and Dutch.
-
-**[ansvar.eu](https://ansvar.eu)** -- Stockholm, Sweden
+If you'd rather not self-host, [ansvar.eu](https://ansvar.eu) provides this
+MCP plus the full Ansvar fleet through a single authenticated endpoint, with
+the curated production corpus, multi-MCP query orchestration, and citation
+enrichment.
 
 ---
 
-<p align="center">
-  <sub>Built with care in Stockholm, Sweden</sub>
-</p>
+Issues: [github.com/Ansvar-Systems/Belgian-law-mcp/issues](https://github.com/Ansvar-Systems/Belgian-law-mcp/issues) · Security: <security@ansvar.eu>
+
