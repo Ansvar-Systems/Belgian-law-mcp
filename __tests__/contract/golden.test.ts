@@ -135,12 +135,29 @@ const isNightly = process.env['CONTRACT_MODE'] === 'nightly';
 
 const dbPath =
   process.env['BELGIAN_LAW_DB_PATH'] ?? join(__dirname, '..', '..', 'data', 'database.db');
-const dbAvailable = existsSync(dbPath);
+
+function hasDbContent(path: string): boolean {
+  try {
+    const probe = new Database(path, { readonly: true });
+    try {
+      const row = probe.prepare('SELECT COUNT(*) as count FROM legal_documents').get() as
+        | { count: number }
+        | undefined;
+      return (row?.count ?? 0) > 0;
+    } finally {
+      probe.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+const dbAvailable = existsSync(dbPath) && hasDbContent(dbPath);
 
 if (!dbAvailable) {
   // eslint-disable-next-line no-console
   console.warn(
-    `[contract] Skipping contract tests: database not found at ${dbPath}. ` +
+    `[contract] Skipping contract tests: database missing or empty at ${dbPath}. ` +
       `Run 'npm run ingest' to build it, or download the release artifact.`,
   );
 }

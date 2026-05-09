@@ -1,8 +1,13 @@
 /**
  * about — Server metadata, dataset statistics, and provenance.
+ *
+ * Returns the fleet-wide contract shape: { server, dataset, provenance, security, _metadata }.
+ * Asserted by __tests__/contract/golden.test.ts via fixtures/golden-tests.json (be-020).
  */
 
 import type Database from '@ansvar/mcp-sqlite';
+import { detectCapabilities, readDbMetadata } from '../capabilities.js';
+import { generateResponseMetadata } from '../utils/metadata.js';
 
 export interface AboutContext {
   version: string;
@@ -19,43 +24,53 @@ function safeCount(db: InstanceType<typeof Database>, sql: string): number {
   }
 }
 
-export function getAbout(db: InstanceType<typeof Database>, context: AboutContext) {
-
-  const euRefs = safeCount(db, 'SELECT COUNT(*) as count FROM eu_references');
-
-  const stats: Record<string, number> = {
-    documents: safeCount(db, 'SELECT COUNT(*) as count FROM legal_documents'),
-    provisions: safeCount(db, 'SELECT COUNT(*) as count FROM legal_provisions'),
-    definitions: safeCount(db, 'SELECT COUNT(*) as count FROM definitions'),
-  };
-
-  if (euRefs > 0) {
-    stats.eu_documents = safeCount(db, 'SELECT COUNT(*) as count FROM eu_documents');
-    stats.eu_references = euRefs;
+function safeCapabilities(db: InstanceType<typeof Database>): string[] {
+  try {
+    return [...detectCapabilities(db)];
+  } catch {
+    return [];
   }
+}
+
+export function getAbout(db: InstanceType<typeof Database>, context: AboutContext) {
+  const meta = readDbMetadata(db);
 
   return {
-    name: 'Belgian Law MCP',
-    version: context.version,
-    jurisdiction: 'BE',
-    description: 'Belgian Law MCP — legislation via Model Context Protocol',
-    stats,
-    data_sources: [
-      {
-        name: 'Belgian Official Gazette (Moniteur Belge)',
-        url: 'https://www.ejustice.just.fgov.be',
-        authority: 'FPS Justice',
+    server: {
+      name: 'Belgian Law MCP',
+      version: context.version,
+      repository: 'https://github.com/Ansvar-Systems/Belgium-law-mcp',
+    },
+    dataset: {
+      jurisdiction: 'Belgium (BE)',
+      languages: ['fr', 'nl', 'de'],
+      counts: {
+        legal_documents: safeCount(db, 'SELECT COUNT(*) as count FROM legal_documents'),
+        legal_provisions: safeCount(db, 'SELECT COUNT(*) as count FROM legal_provisions'),
+        definitions: safeCount(db, 'SELECT COUNT(*) as count FROM definitions'),
+        eu_documents: safeCount(db, 'SELECT COUNT(*) as count FROM eu_documents'),
+        eu_references: safeCount(db, 'SELECT COUNT(*) as count FROM eu_references'),
       },
-    ],
-    freshness: {
-      database_built: context.dbBuilt,
+      fingerprint: context.fingerprint,
+      built_at: context.dbBuilt,
+      tier: meta.tier,
+      schema_version: meta.schema_version,
+      capabilities: safeCapabilities(db),
     },
-    disclaimer:
-      'This is a research tool, not legal advice. Verify critical citations against official sources.',
-    network: {
-      name: 'Ansvar MCP Network',
-      open_law: 'https://ansvar.eu/open-law',
-      directory: 'https://ansvar.ai/mcp',
+    provenance: {
+      sources: [
+        {
+          name: 'Belgian Official Gazette (Moniteur Belge / Belgisch Staatsblad)',
+          authority: 'FPS Justice (SPF Justice / FOD Justitie)',
+          url: 'https://www.ejustice.just.fgov.be',
+          license: 'Public Domain (Belgian Copyright Act, Art. 8)',
+        },
+      ],
     },
+    security: {
+      access_model: 'read-only',
+      pii: 'none',
+    },
+    _metadata: generateResponseMetadata(db),
   };
 }
