@@ -18,6 +18,13 @@ describe('search_legislation', () => {
     const result = await searchLegislation(db, { query: 'jeunesse' });
     expect(result.results.length).toBeGreaterThan(0);
     expect(result.results[0]).toHaveProperty('document_id');
+    expect(result.results[0].source).toBe(result.results[0].document_id);
+    expect(result.results[0].source_full_name).toBe(result.results[0].document_title);
+    expect(result.results[0].article).toBe(result.results[0].provision_ref);
+    expect(result.results[0]._citation?.source).toBe(result.results[0].document_id);
+    expect(result.results[0]._citation?.source_full_name).toBe(result.results[0].document_title);
+    expect(result.results[0]._citation?.lookup.args.document_id).toBe(result.results[0].document_id);
+    expect(result.results[0]._citation?.lookup.args.section).toBe(result.results[0].provision_ref);
     expect(result._metadata).toHaveProperty('source_authority');
   });
 
