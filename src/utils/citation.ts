@@ -15,6 +15,11 @@
 export interface CitationMetadata {
   canonical_ref: string;
   display_text: string;
+  source?: string;
+  source_full_name?: string;
+  article?: string;
+  publisher?: string;
+  license?: string;
   aliases?: string[];
   source_url?: string;
   lookup: {
@@ -111,6 +116,11 @@ export function buildProvisionCitation(
   return {
     canonical_ref: canonicalRef,
     display_text: displayText,
+    source: documentId,
+    source_full_name: documentTitle,
+    ...(provisionRef && { article: provisionRef }),
+    publisher: 'Belgian Federal Public Service Justice (Justel)',
+    license: 'Justel open data',
     ...(aliases.length > 0 && { aliases }),
     ...(sourceUrl && { source_url: sourceUrl }),
     lookup: {

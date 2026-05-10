@@ -7,6 +7,7 @@ import { buildFtsQueryVariants, buildLikePattern, sanitizeFtsInput } from '../ut
 import { normalizeAsOfDate } from '../utils/as-of-date.js';
 import { resolveExistingStatuteId } from '../utils/statute-id.js';
 import { generateResponseMetadata, type ToolResponse } from '../utils/metadata.js';
+import { buildProvisionCitation, type CitationMetadata } from '../utils/citation.js';
 
 export interface SearchLegislationInput {
   query: string;
@@ -25,8 +26,13 @@ export interface SearchLegislationResult {
   title: string | null;
   snippet: string;
   relevance: number;
+  source_url?: string | null;
   valid_from?: string | null;
   valid_to?: string | null;
+  source?: string;
+  source_full_name?: string;
+  article?: string;
+  _citation?: CitationMetadata;
 }
 
 const DEFAULT_LIMIT = 10;
@@ -78,6 +84,7 @@ export async function searchLegislation(
             lpv.title,
             substr(lpv.content, 1, 320) as snippet,
             0.0 as relevance,
+            ld.url as source_url,
             lpv.valid_from,
             lpv.valid_to,
             row_number() OVER (
@@ -106,7 +113,7 @@ export async function searchLegislation(
       sql += `
         )
         SELECT document_id, document_title, provision_ref, chapter, section,
-               title, snippet, relevance, valid_from, valid_to
+               title, snippet, relevance, source_url, valid_from, valid_to
         FROM ranked_versions
         WHERE version_rank = 1
         ORDER BY relevance
@@ -118,7 +125,7 @@ export async function searchLegislation(
         const rows = db.prepare(sql).all(...params) as SearchLegislationResult[];
         if (rows.length > 0) {
           return {
-            results: deduplicateResults(rows, limit),
+            results: withCitationMetadata(deduplicateResults(rows, limit)),
             _metadata: generateResponseMetadata(db),
           };
         }
@@ -141,6 +148,7 @@ export async function searchLegislation(
         lp.title,
         snippet(provisions_fts, 0, '>>>', '<<<', '...', 32) as snippet,
         bm25(provisions_fts) as relevance,
+        ld.url as source_url,
         NULL as valid_from,
         NULL as valid_to
       FROM provisions_fts
@@ -170,7 +178,7 @@ export async function searchLegislation(
         queryStrategy = ftsQuery === queryVariants[0] ? 'exact' : 'fallback';
         const deduped = deduplicateResults(rows, limit);
         return {
-          results: deduped,
+          results: withCitationMetadata(deduped),
           _metadata: {
             ...generateResponseMetadata(db),
             ...(queryStrategy === 'fallback' ? { query_strategy: 'broadened' as const } : {}),
@@ -195,6 +203,7 @@ export async function searchLegislation(
         lp.title,
         substr(lp.content, 1, 200) as snippet,
         0 as relevance,
+        ld.url as source_url,
         NULL as valid_from,
         NULL as valid_to
       FROM legal_provisions lp
@@ -220,7 +229,7 @@ export async function searchLegislation(
       const rows = db.prepare(likeSql).all(...likeParams) as SearchLegislationResult[];
       if (rows.length > 0) {
         return {
-          results: deduplicateResults(rows, limit),
+          results: withCitationMetadata(deduplicateResults(rows, limit)),
           _metadata: {
             ...generateResponseMetadata(db),
             query_strategy: 'like_fallback',
@@ -233,6 +242,24 @@ export async function searchLegislation(
   }
 
   return { results: [], _metadata: generateResponseMetadata(db) };
+}
+
+function withCitationMetadata(rows: SearchLegislationResult[]): SearchLegislationResult[] {
+  return rows.map((row) => ({
+    ...row,
+    source: row.document_id,
+    source_full_name: row.document_title,
+    article: row.provision_ref,
+    _citation: buildProvisionCitation(
+      row.document_id,
+      row.document_title || '',
+      row.provision_ref || '',
+      row.document_id,
+      row.provision_ref || row.section || '',
+      row.source_url ?? null,
+      null,
+    ),
+  }));
 }
 
 /**
