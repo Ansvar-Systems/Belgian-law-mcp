@@ -271,8 +271,14 @@ export function parseLawContent(html: string, numac: string): ParsedLaw {
 function parseArticles(html: string): ParsedProvision[] {
   const provisions: ParsedProvision[] = [];
 
-  // Split on article anchors: <A NAME='Art.XXX'>
-  const articlePattern = /<A\s+NAME='Art\.([^']+)'[^>]*>/gi;
+  // Split on article anchors: <a name="Art.XXX"> (Justel emits single quotes in
+  // the raw page, but this HTML has been round-tripped through JSDOM —
+  // parseLawContent reads textSection.innerHTML — which re-serialises attributes
+  // lower-cased and DOUBLE-quoted (<a name="Art.1">). A single-quote-only regex
+  // therefore matched ZERO anchors on every document, silently forcing the
+  // over-splitting fallback parser (which splits on every inline "Article N"
+  // cross-reference). Match either quote style so the anchor path actually runs.
+  const articlePattern = /<a\s+name=["']Art\.([^"']+)["'][^>]*>/gi;
   const matches: Array<{ ref: string; startIndex: number }> = [];
 
   let match: RegExpExecArray | null;
@@ -350,10 +356,15 @@ function parseArticlesFallback(html: string): ParsedProvision[] {
   const provisions: ParsedProvision[] = [];
   const cleanText = cleanArticleHtml(html);
 
-  const parts = cleanText.split(/(?=(?:Article|Art\.)\s+\d+)/i);
+  // Split only at a LINE START followed by a capitalised "Article N" / "Art. N".
+  // The previous `/(?=(?:Article|Art\.)\s+\d+)/i` split anywhere and was
+  // case-insensitive, so every inline lowercase cross-reference ("à l'article 5")
+  // started a phantom provision and truncated its parent mid-sentence. Real
+  // article headings begin a line and are capitalised; cross-references do not.
+  const parts = cleanText.split(/(?:^|\n)(?=(?:Article|Art\.)\s+\d)/);
 
   for (const part of parts) {
-    const artMatch = part.match(/^(?:Article|Art\.)\s+(\d+(?:er)?)/i);
+    const artMatch = part.match(/^(?:Article|Art\.)\s+(\d+(?:er)?)/);
     if (!artMatch) continue;
 
     const num = artMatch[1];
